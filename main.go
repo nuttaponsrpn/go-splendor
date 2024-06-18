@@ -1,35 +1,42 @@
 package main
 
 import (
-	"log"
-	"net/http"
-
-	"github.com/gorilla/websocket"
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/websocket/v2"
 	"github.com/nuttaponsrpn/go-splendor/adapters"
 	"github.com/nuttaponsrpn/go-splendor/core"
-	"github.com/nuttaponsrpn/go-splendor/gotype"
 )
 
 func main() {
-	var clients = make(map[*websocket.Conn]bool)
-	var broadcast = make(chan gotype.GameState)
-	var upgrader = websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool {
-			return true
-		},
+	var rooms = make(map[string]*core.Room)
+	gameRoomService := core.NewGameRoomService(&rooms)
+	gameRoomAdapter := adapters.NewGameRoomAdapter(&gameRoomService)
+
+	app := fiber.New()
+	// Middleware to upgrade the HTTP connection to WebSocket
+	app.Use("/ws", handleConnections)
+	// WebSocket route
+	app.Get("/ws", websocket.New(gameRoomAdapter.HandleConnections))
+
+	// HTTP GET all rooms
+	app.Get("/rooms", func(c *fiber.Ctx) error {
+		return c.Status(fiber.StatusOK).JSON(rooms)
+	})
+
+	// HTTP GET route
+	app.Delete("/rooms", func(c *fiber.Ctx) error {
+		m := c.Queries()
+		room := gameRoomService.DeleteRoom(m["room_id"])
+		return c.Status(fiber.StatusOK).JSON(room)
+	})
+
+	app.Listen(":8080")
+}
+
+func handleConnections(c *fiber.Ctx) error {
+	if websocket.IsWebSocketUpgrade(c) {
+		c.Locals("allowed", true)
+		return c.Next()
 	}
-
-	gameService := core.NewGameService(gotype.GameState{})
-	websocketAdapters := adapters.NewWebsocketAdapter(upgrader, clients, broadcast, gameService)
-
-	http.HandleFunc("/ws", websocketAdapters.CreateClientSocket)
-
-	go websocketAdapters.BroadcastMessage()
-
-	log.Println("HTTP server started on :8080")
-	err := http.ListenAndServe(":8080", nil)
-	if err != nil {
-		log.Fatal("ListenAndServe: ", err)
-	}
-
+	return fiber.ErrUpgradeRequired
 }

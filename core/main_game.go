@@ -21,6 +21,7 @@ type WebsocketPlayerAction struct {
 type GameService interface {
 	GetGameState() gotype.GameState
 	JoinPlayer(playerId string)
+	RemovePlayer(playerId string)
 	UpdateGameState(action WebsocketPlayerAction) error
 }
 
@@ -79,6 +80,14 @@ func (s *GameServiceImpl) JoinPlayer(playerId string) {
 		NobleCards:    []gotype.NobleCard{},
 	}
 	s.GameState.Players = append(s.GameState.Players, newPlayer)
+}
+
+func (s *GameServiceImpl) RemovePlayer(playerId string) {
+
+	removeIndex := slices.IndexFunc(s.GameState.Players, func(p gotype.Player) bool { return p.Id == playerId })
+	if removeIndex != -1 {
+		s.GameState.Players = append(s.GameState.Players[:removeIndex], s.GameState.Players[removeIndex+1:]...)
+	}
 }
 
 func InitGameCard(game *gotype.GameState) {
