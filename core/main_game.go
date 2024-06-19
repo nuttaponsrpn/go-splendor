@@ -84,6 +84,10 @@ func (s *GameServiceImpl) JoinPlayer(playerId string) {
 
 func (s *GameServiceImpl) RemovePlayer(playerId string) {
 
+	if s.GameState.Players == nil || len(s.GameState.Players) <= 0 {
+		return
+	}
+
 	removeIndex := slices.IndexFunc(s.GameState.Players, func(p gotype.Player) bool { return p.Id == playerId })
 	if removeIndex != -1 {
 		s.GameState.Players = append(s.GameState.Players[:removeIndex], s.GameState.Players[removeIndex+1:]...)

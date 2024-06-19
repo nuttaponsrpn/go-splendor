@@ -17,6 +17,7 @@ func main() {
 	app.Use("/ws", handleConnections)
 	// WebSocket route
 	app.Get("/ws", websocket.New(gameRoomAdapter.HandleConnections))
+	app.Get("/ws/displayrooms", websocket.New(gameRoomAdapter.ShowPlayerRooms))
 
 	// HTTP GET all rooms
 	app.Get("/rooms", func(c *fiber.Ctx) error {

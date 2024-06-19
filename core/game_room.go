@@ -22,16 +22,22 @@ type Room struct {
 }
 
 type GameRoom interface {
-	CreateRoom(roomID string, playerID string, c *websocket.Conn)
+	CreateRoom(roomID string, playerID string, conn *websocket.Conn)
 	DeleteRoom(roomID string) *Room
+	GetRoom() []DisplayRooms
+	GetRoomChannel() chan string
 }
 
 type GameRoomService struct {
-	rooms map[string]*Room
+	rooms       map[string]*Room
+	roomChannel chan string
 }
 
 func NewGameRoomService(rooms *map[string]*Room) GameRoom {
-	return &GameRoomService{rooms: *rooms}
+	return &GameRoomService{
+		rooms:       *rooms,
+		roomChannel: make(chan string),
+	}
 }
 
 func (gs *GameRoomService) CreateRoom(roomID string, playerID string, conn *websocket.Conn) {
@@ -60,6 +66,7 @@ func (gs *GameRoomService) CreateRoom(roomID string, playerID string, conn *webs
 			_, exists := room.clients[client]
 			if exists {
 				room.unregister <- client
+				gs.roomChannel <- roomID
 			}
 			conn.Close()
 		}
@@ -79,14 +86,15 @@ func (gs *GameRoomService) CreateRoom(roomID string, playerID string, conn *webs
 		case gotype.Waiting:
 			gs.rooms[roomID].GameService.JoinPlayer(msg.PlayerId)
 			gameState = gs.rooms[roomID].GameService.GetGameState()
-
+			gs.roomChannel <- roomID
 		case gotype.Started:
 			gs.rooms[roomID].GameService.UpdateGameState(msg)
 			gameState = gs.rooms[roomID].GameService.GetGameState()
 		case gotype.CloseConnection:
-			gs.rooms[roomID].unregister <- client
 			gs.rooms[roomID].GameService.RemovePlayer(msg.PlayerId)
 			gameState = gs.rooms[roomID].GameService.GetGameState()
+			gs.rooms[roomID].unregister <- client
+			gs.roomChannel <- roomID
 		}
 
 		if gs.rooms[roomID] != nil {
@@ -100,12 +108,10 @@ func (r *Room) run(roomID string, playerID string, rooms map[string]*Room) {
 		select {
 		case client := <-r.register:
 			r.clients[client] = playerID
-
 		case client := <-r.unregister:
 			if _, ok := r.clients[client]; ok {
 				delete(rooms[roomID].clients, client)
 				client.conn.Close()
-
 				if len(r.clients) == 0 {
 					delete(rooms, roomID)
 				}
@@ -135,7 +141,32 @@ func (gs *GameRoomService) DeleteRoom(roomID string) *Room {
 
 	for client := range clientsLen {
 		gs.rooms[roomID].unregister <- client
+		gs.roomChannel <- roomID
 	}
 
 	return gs.rooms[roomID]
+}
+
+type DisplayRooms struct {
+	RoomID  string `json:"roomID"`
+	Players int    `json:"players"`
+}
+
+func (gs *GameRoomService) GetRoom() []DisplayRooms {
+	var availableRoom []DisplayRooms
+
+	if len(gs.rooms) > 0 {
+		for roomID := range gs.rooms {
+			playerLength := len(gs.rooms[roomID].GameService.GetGameState().Players)
+			if playerLength < 3 {
+				availableRoom = append(availableRoom, DisplayRooms{RoomID: roomID, Players: playerLength})
+			}
+		}
+	}
+
+	return availableRoom
+}
+
+func (gs *GameRoomService) GetRoomChannel() chan string {
+	return gs.roomChannel
 }
